@@ -12,136 +12,121 @@
 #define APPSK  "power2000"
 #endif
 
-#define MY_BLUE_LED_PIN  16
-#define MY_BLUE_LED_PIN2 2
-#define MY_BUZZER_PIN    10
+static const   char *softAP_ssid = APSSID;
+static const   char *softAP_password = APPSK;
+static const   char *myHostname = "poweramp";
+static char    ssid[33] = "marius";
+static char    password[65] = "myssidpass";
+static const   byte DNS_PORT = 53;
 
-const char *softAP_ssid = APSSID;
-const char *softAP_password = APPSK;
+static DNSServer           dnsServer;
+ESP8266WebServer    server(80);
+static IPAddress           apIP(10, 5, 5, 1);
+static IPAddress           netMsk(255, 255, 0, 0);
+static IPAddress           primaryDNS(8, 8, 8, 8); // optional
+static IPAddress           secondaryDNS(8, 8, 4, 4); // optional
 
-/* hostname for mDNS. Should work at least on windows. Try http://esp8266.local */
-const char *myHostname = "poweramp";
+// wifi according to local network
+static IPAddress _ip(192,168,1, 229);
+static IPAddress _gw(192,168,1, 1);
+static IPAddress _sn(255, 255, 255, 0);
 
-/* Don't set this wifi credentials. They are configurated at runtime and stored on EEPROM */
-char ssid[33] = "marius";
-char password[65] = "myssidpass";
-
-// DNS server
-const byte DNS_PORT = 53;
-DNSServer dnsServer;
-
-// Web server
-ESP8266WebServer server(80);
-
-/* Soft AP network parameters */
-IPAddress apIP(10, 5, 5, 1);
-IPAddress netMsk(255, 255, 0, 0);
+static boolean             _connect;
+static unsigned long       lastConnectTry = 0;
+static unsigned int        status = WL_IDLE_STATUS;
+static Adafruit_BMP085     bmp;
 
 
-/** Should I connect to WLAN asap? */
-boolean connect;
 
-/** Last time I tried to connect to WLAN */
-unsigned long lastConnectTry = 0;
+static const int _led_by_usb = 16;
+static const int _led_by_ant = 2;
+static const int _pw1 = 12;
+static const int _pw2 = 13;
+static const int _buz = 15;
+static int       _modulo=32;
 
-/** Current WLAN status */
-unsigned int status = WL_IDLE_STATUS;
+static const int _max_duty = 1023;
+static const int _tmp_max = 60;
+static int     _start_duty = 30;
+static int     _start_temp = 45;
+static int     _alarm_temp = 80;
+static int     _read_interval = 100;
+static float   _ftemp = 0.0;
 
-Adafruit_BMP085 bmp;
-
-const int _pw1 = 14; 
-const int _pw2 = 13; 
-const int _pw3 = 12; 
-const int _pw4 = 15;
- 
-const int _max_duty = 1023;
-const int _tmp_max = 60;
-
-int     _start_duty = 30;
-int     _start_temp = 45;
-int     _alarm_temp = 80;
-int     _read_interval = 100;
 
 char    _temp[32]="";
 char    _press[32]="";
 char    _pwm[32]="";
 int     _loop=0;
-float   _ftemp = 0.0;
+bool    _alarm = false;
 
-#define SAMPLES_MAX 600  
+#define SAMPLES_MAX 600
 struct Temps
 {
-  int   _count;
-  float _data[SAMPLES_MAX];
+    int   _count;
+    float _data[SAMPLES_MAX];
 };
-
 
 Temps  _a_temp = {0,{0}};
 
-
+//
+// read and calculate p1m
+//
 void shot()
 {
     _ftemp = bmp.readTemperature();
     float pressu= bmp.readPressure();
-    sprintf(_temp,"%f C ",_ftemp);
+    sprintf(_temp,"%f °C ",_ftemp);
     sprintf(_press,"%f mmHg ",pressu);
     int pwm = _calc_pwm(_ftemp);
+    if(_ftemp > float(_alarm_temp))
+    {
+        pwm = _max_duty;
+        Serial.println("ALARM");
+        _alarm=true;
+        buzz(512);
+        _modulo=64;
+    }
+    else
+    {
+        _alarm=false;
+        _modulo = 10;
+    }
     analogWrite(_pw1,pwm);
     analogWrite(_pw2,pwm);
-    analogWrite(_pw3,pwm); 
-    analogWrite(_pw4,pwm); 
     sprintf(_pwm,"%d / [%d] ", int((float(pwm) * 100.0f) / _max_duty), pwm);
 }
 
 
-
 void setup() {
 
-    pinMode(MY_BLUE_LED_PIN, OUTPUT);
-    pinMode(MY_BLUE_LED_PIN2, OUTPUT);
-    pinMode(MY_BUZZER_PIN, OUTPUT);
-
-    digitalWrite(MY_BLUE_LED_PIN, HIGH);
-    digitalWrite(MY_BLUE_LED_PIN2, HIGH);
-
-
-      
-    analogWriteFreq(20000);
+    pinMode(_led_by_usb, OUTPUT);
+    pinMode(_led_by_ant, OUTPUT);
+    pinMode(_buz, OUTPUT);
+    digitalWrite(_led_by_usb, HIGH);
+    digitalWrite(_led_by_ant, HIGH);
+    analogWriteFreq(25000);
     analogWrite(_pw1, _max_duty/2);
     analogWrite(_pw2, _max_duty/2);
-    analogWrite(_pw3, _max_duty/2); 
-    analogWrite(_pw4, _max_duty/2); 
-
-    
-
-
-    delay(1000);
-    
+    delay(128);
     analogWrite(_pw1, _max_duty);
     analogWrite(_pw2, _max_duty);
-    analogWrite(_pw3, _max_duty); 
-    analogWrite(_pw4, _max_duty);
-
-    delay(1000);
+    delay(128);
     loadConfig();
-    
-    delay(1000);
+    delay(128);
     Serial.begin(115200);
-    Serial.println();
+    Serial.println("");
     Serial.println("Configuring access point...");
-    
-    /* You can remove the password parameter if you want the AP to be open. */
+
     WiFi.softAPConfig(apIP, apIP, netMsk);
     WiFi.softAP(softAP_ssid, softAP_password);
-    delay(500); // Without delay I've seen the IP address blank
+    delay(512);
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP());
-    
-    /* Setup the DNS server redirecting all the domains to the apIP */
+
     dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
     dnsServer.start(DNS_PORT, "*", apIP);
-    
-    /* Setup web pages: root, wifi config pages, SO captive portal detectors and not found. */
+
     server.on("/", handleRoot);
     server.on("/index.html", handleRoot);
     server.on("/wifi", handleWifi);
@@ -153,39 +138,25 @@ void setup() {
     server.begin(); // Web server start
     Serial.println("HTTP server started");
     loadCredentials(); // Load WLAN credentials from network
-    connect = strlen(ssid) > 0; // Request WLAN connect if there is a SSID
+    _connect = strlen(ssid) > 0; // Request WLAN _connect if there is a SSID
     bmp.begin();
     shot();
-    digitalWrite(MY_BLUE_LED_PIN, LOW);
-    digitalWrite(MY_BLUE_LED_PIN2,LOW);
+    pinMode(_led_by_ant, OUTPUT);
+    digitalWrite(_led_by_usb, LOW);
+    digitalWrite(_led_by_ant,LOW);
 }
 
 void connectWifi() {
     Serial.println("Connecting as wifi client...");
-    
-    
-    
     WiFi.disconnect();
     WiFi.begin(ssid, password);
-    
-    
-    IPAddress _ip = IPAddress(192,168,1, 229);
-    IPAddress _gw = IPAddress(192,168,1, 1);
-    IPAddress _sn = IPAddress(255, 255, 255, 0);
-    IPAddress primaryDNS(8, 8, 8, 8); // optional
-    IPAddress secondaryDNS(8, 8, 4, 4); // optional
-    
-    
     if (!WiFi.config(_ip, _gw, _sn, primaryDNS, secondaryDNS)) {
         Serial.println("STA Failed to configure");
-    }    
-    
-    
+    }
     int connRes = WiFi.waitForConnectResult();
     Serial.print("connRes: ");
     Serial.println(connRes);
 }
-
 
 int _calc_pwm(float temp)
 {
@@ -200,46 +171,48 @@ int _calc_pwm(float temp)
             ct=_tmp_max;
         float curtemp = ct - _start_temp;
         float load = curtemp / maxrange;
-
-
         float curpwm = (remainpwm * load) + fstartpwm;
         if(curpwm > 1000.0f)
             curpwm = _max_duty;
         ppwm = int(curpwm);
     }
-    return ppwm; 
+    return ppwm;
 }
 
+//
+// buzzer
+//
 void IRAM_ATTR delayMicroseconds2(uint32_t us);
 void buzz(int timed)
 {
-    unsigned long now = millis() + timed;
-    while(millis()<timed)
+    int k = timed;
+    digitalWrite(_led_by_ant, LOW);
+    digitalWrite(_led_by_usb, LOW);
+    while(k-->0)
     {
-         delayMicroseconds2(512);
-         digitalWrite(MY_BUZZER_PIN,1);
-         delayMicroseconds2(512);
-         digitalWrite(MY_BUZZER_PIN,0);
+        delayMicroseconds2(128);
+        digitalWrite(_buz,1);
+        delayMicroseconds2(128);
+        digitalWrite(_buz,0);
     }
+    digitalWrite(_led_by_ant, HIGH);
+    digitalWrite(_led_by_usb, HIGH);
 }
 
-unsigned long _prevtime = 0;;
-static int _level = 1;
-static int _buzz = 0;
-static int _level2 = 1;
-void loop() {
-    if (connect) {
+void loop()
+{
+    if (_connect) {
         Serial.println("Connect requested");
-        connect = false;
+        _connect = false;
         connectWifi();
         lastConnectTry = millis();
     }
     {
         unsigned int s = WiFi.status();
         if (s == 0 && millis() > (lastConnectTry + 60000)) {
-            /* If WLAN disconnected and idle try to connect */
+            /* If WLAN disconnected and idle try to _connect */
             /* Don't set retry time too low as retry interfere the softAP operation */
-            connect = true;
+            _connect = true;
         }
         if (status != s) { // WLAN status change
             Serial.print("Status: ");
@@ -252,7 +225,7 @@ void loop() {
                 Serial.println(ssid);
                 Serial.print("IP address: ");
                 Serial.println(WiFi.localIP());
-                
+
                 // Setup MDNS responder
                 if (!MDNS.begin(myHostname)) {
                     Serial.println("Error setting up MDNS responder!");
@@ -270,40 +243,37 @@ void loop() {
         }
 
         if(_loop%10==0){
-              digitalWrite(MY_BLUE_LED_PIN, _level ? LOW:HIGH);
-              _level = !_level;
+            digitalWrite(_led_by_usb, LOW);
+            delay(64);
+            digitalWrite(_led_by_usb, HIGH);
+            digitalWrite(_led_by_ant, HIGH);
         }
-        
-        if(_loop%100==0)
+
+        if(_loop%_modulo==0)
         {
-             digitalWrite(MY_BLUE_LED_PIN, _level2 ? LOW:HIGH);
-             _level2=!_level2;
-          
-            //_prevtime = millis();
+            char data[64];
+
             shot();
-            Serial.println("reading temp :" + int(_ftemp));
+            Serial.println("reading temp ");
             if(_a_temp._count>SAMPLES_MAX)
             {
-              for(s=1;s<SAMPLES_MAX;s++)
-              {
-                 _a_temp._data[s-1]=_a_temp._data[s];
-              }
-              _a_temp._data[SAMPLES_MAX-1] = _ftemp;
+                for(s=1;s<SAMPLES_MAX;s++)
+                {
+                    _a_temp._data[s-1]=_a_temp._data[s];
+                }
+                _a_temp._data[SAMPLES_MAX-1] = _ftemp;
             }else{
-              _a_temp._data[_a_temp._count++] = _ftemp;
+                _a_temp._data[_a_temp._count++] = _ftemp;
             }
-            
-            
-            if(_ftemp > float(_tmp_max))
-            {
-               Serial.println("buzzing");
-               buzz(2000);
-            }
+
+            sprintf(data, " t= %f alarm = %f", _ftemp, float(_alarm_temp));
+            Serial.println(data);
         }
-        
+
     }
     dnsServer.processNextRequest();
     server.handleClient();
-    delay (120);
+    delay (32);
+
     ++_loop;
 }
