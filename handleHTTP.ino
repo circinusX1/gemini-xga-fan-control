@@ -7,16 +7,21 @@ extern char _pwm[32];
 extern int     _start_duty;
 extern int     _start_temp;
 extern int     _alarm_temp;
+extern int     _test_pwm;
+extern int     _freq;
 struct Temps;
 extern Temps  _a_temp;
 
 
 void handleRoot() 
 {
+  Serial.println("handleRoot");
   if (captivePortal()) 
   {
+    Serial.println("captive Portal");
     return;
   }
+  Serial.println("sends page");
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
   server.sendHeader("Expires", "-1");
@@ -58,7 +63,7 @@ void handleRoot()
             "<li><a href='/config'>FANS CONFIG</a>.</li>\n"
             "</div></h4>\n");
 
-  Page += F("\n<canvas width='610' height='256' id='ka'>\n");
+  Page += F("\n<canvas width='610' height='360' id='ka'>\n");
   
             
  
@@ -145,6 +150,7 @@ void handleRoot()
 /** Redirect to captive portal if we got a request for another domain. Return true in that case so the page handler do not try to handle 
 the request again. */
 boolean captivePortal() {
+  Serial.println("captivePortal page");
   if (!isIp(server.hostHeader()) && server.hostHeader() != (String(myHostname) + ".local")) {
     Serial.println("Request redirected to captive portal");
     server.sendHeader("Location", String("http://") + toStringIp(server.client().localIP()), true);
@@ -157,6 +163,7 @@ boolean captivePortal() {
 
 /** Wifi config page handler */
 void handleWifi() {
+  Serial.println("handleWifi page");
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
   server.sendHeader("Expires", "-1");
@@ -219,6 +226,7 @@ WiFi.RSSI(i) + F(")</td></tr>");
 
 /** Handle the WLAN save form and redirect to WLAN config page again */
 void handleWifiSave() {
+  Serial.println("handleWifiSave page");
   Serial.println("wifi save");
   server.arg("n").toCharArray(ssid, sizeof(ssid) - 1);
   server.arg("p").toCharArray(password, sizeof(password) - 1);
@@ -233,6 +241,7 @@ void handleWifiSave() {
 }
 
 void handleNotFound() {
+  Serial.println("handleNotFound");
   if (captivePortal()) { // If caprive portal redirect instead of displaying the error page.
     return;
   }
@@ -256,9 +265,12 @@ void handleNotFound() {
 
 
 void handleConfig() {
+  Serial.println("handleConfig");
   char tempstart[8]="";
   char pwmstart[8]="";
   char alarmtemp[8]="";
+  char testpwm[8]="";
+  char freq[8]="";
     
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
@@ -266,13 +278,21 @@ void handleConfig() {
   bool saved = false ;
   if(server.args()!=0)
   {
-
+    Serial.println("reading handleConfig");
     server.arg("T").toCharArray(tempstart, sizeof(tempstart) - 1);
     server.arg("D").toCharArray(pwmstart, sizeof(pwmstart) - 1);
     server.arg("A").toCharArray(alarmtemp, sizeof(alarmtemp) - 1);
+    server.arg("P").toCharArray(testpwm, sizeof(testpwm) - 1);
+    server.arg("F").toCharArray(freq, sizeof(freq) - 1);
+    
     _start_duty = ::atoi(pwmstart);
     _start_temp = ::atoi(tempstart);
     _alarm_temp = ::atoi(alarmtemp);
+    _test_pwm = ::atoi(testpwm);
+    _freq     = ::atoi(freq);
+    
+    if(_freq < 1000)_freq=1000;
+    if(_freq > 40000)_freq=40000;
     saveConfig();
     saved =  true; 
   }
@@ -283,8 +303,7 @@ void handleConfig() {
             "<meta name='viewport' content='width=device-width'>"
             "<title>poweramp</title></head><body><h4>"
             "<h2>Fans config</h2>");
-// extern int     _start_duty;
-// extern int     _start_temp;
+
   Page +=  F("\n<form method='POST' action='config'>\n");
   Page +=  F("<li>Start Temperature: <input type='text' name='T' value='");
   Page += String(_start_temp); 
@@ -294,6 +313,12 @@ void handleConfig() {
   Page +=  F("'></li>\n");          
   Page +=  F("<li>Start Duty: <input type='text' name='D' value='");
   Page += String(_start_duty); 
+  Page +=  F("'></li>\n");    
+  Page +=  F("<li>Test Pwm: (0=disable..1023) <input type='text' name='P' value='");
+  Page += String(_test_pwm); 
+  Page +=  F("'></li>\n");   
+  Page +=  F("<li>Pwm Freq: (1001-39999) <input type='text' name='F' value='");
+  Page += String(_freq); 
   Page +=  F("'></li>\n");          
   Page +=  F("<input type='submit' value='Save'/></form>\n");
   if(saved)

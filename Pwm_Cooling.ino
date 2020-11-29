@@ -16,18 +16,18 @@ static const   char *softAP_ssid = APSSID;
 static const   char *softAP_password = APPSK;
 static const   char *myHostname = "poweramp";
 static char    ssid[33] = "marius";
-static char    password[65] = "myssidpass";
+static char    password[65] = "********";
 static const   byte DNS_PORT = 53;
 
 static DNSServer           dnsServer;
-ESP8266WebServer    server(80);
+ESP8266WebServer           server(80);
 static IPAddress           apIP(10, 5, 5, 1);
 static IPAddress           netMsk(255, 255, 0, 0);
 static IPAddress           primaryDNS(8, 8, 8, 8); // optional
 static IPAddress           secondaryDNS(8, 8, 4, 4); // optional
 
 // wifi according to local network
-static IPAddress _ip(192,168,1, 229);
+static IPAddress _ip(192,168,1, 228);
 static IPAddress _gw(192,168,1, 1);
 static IPAddress _sn(255, 255, 255, 0);
 
@@ -43,7 +43,8 @@ static const int _led_by_ant = 2;
 static const int _pw1 = 12;
 static const int _pw2 = 13;
 static const int _buz = 15;
-static int       _modulo=32;
+static int       _modulo=128;
+
 
 static const int _max_duty = 1023;
 static const int _tmp_max = 60;
@@ -53,12 +54,13 @@ static int     _alarm_temp = 80;
 static int     _read_interval = 100;
 static float   _ftemp = 0.0;
 
-
+int     _test_pwm = 0;
 char    _temp[32]="";
 char    _press[32]="";
 char    _pwm[32]="";
 int     _loop=0;
 bool    _alarm = false;
+int     _freq = 22000;
 
 #define SAMPLES_MAX 600
 struct Temps
@@ -84,13 +86,13 @@ void shot()
         pwm = _max_duty;
         Serial.println("ALARM");
         _alarm=true;
-        buzz(512);
-        _modulo=64;
+        buzz(100);
+        _modulo = 32;
     }
     else
     {
         _alarm=false;
-        _modulo = 10;
+        _modulo = 128;
     }
     analogWrite(_pw1,pwm);
     analogWrite(_pw2,pwm);
@@ -105,25 +107,22 @@ void setup() {
     pinMode(_buz, OUTPUT);
     digitalWrite(_led_by_usb, HIGH);
     digitalWrite(_led_by_ant, HIGH);
-    analogWriteFreq(25000);
+    analogWriteFreq(_freq);
     analogWrite(_pw1, _max_duty/2);
     analogWrite(_pw2, _max_duty/2);
     delay(128);
     analogWrite(_pw1, _max_duty);
     analogWrite(_pw2, _max_duty);
-    delay(128);
-    loadConfig();
-    delay(128);
     Serial.begin(115200);
     Serial.println("");
     Serial.println("Configuring access point...");
-
+delay(1000);
     WiFi.softAPConfig(apIP, apIP, netMsk);
     WiFi.softAP(softAP_ssid, softAP_password);
     delay(512);
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP());
-
+delay(1000);
     dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
     dnsServer.start(DNS_PORT, "*", apIP);
 
@@ -140,6 +139,12 @@ void setup() {
     loadCredentials(); // Load WLAN credentials from network
     _connect = strlen(ssid) > 0; // Request WLAN _connect if there is a SSID
     bmp.begin();
+   
+    delay(1000);
+    loadConfig();
+    delay(1000);
+   
+    
     shot();
     pinMode(_led_by_ant, OUTPUT);
     digitalWrite(_led_by_usb, LOW);
@@ -149,10 +154,12 @@ void setup() {
 void connectWifi() {
     Serial.println("Connecting as wifi client...");
     WiFi.disconnect();
+    delay(1000);
     WiFi.begin(ssid, password);
     if (!WiFi.config(_ip, _gw, _sn, primaryDNS, secondaryDNS)) {
         Serial.println("STA Failed to configure");
     }
+    delay(100);
     int connRes = WiFi.waitForConnectResult();
     Serial.print("connRes: ");
     Serial.println(connRes);
@@ -176,6 +183,8 @@ int _calc_pwm(float temp)
             curpwm = _max_duty;
         ppwm = int(curpwm);
     }
+    if(_test_pwm)
+      ppwm = _test_pwm % 1023; 
     return ppwm;
 }
 
@@ -242,14 +251,14 @@ void loop()
             MDNS.update();
         }
 
-        if(_loop%10==0){
+        if(_loop%128==0){
             digitalWrite(_led_by_usb, LOW);
-            delay(64);
+            delay(32);
             digitalWrite(_led_by_usb, HIGH);
             digitalWrite(_led_by_ant, HIGH);
         }
 
-        if(_loop%_modulo==0)
+        if(_loop% _modulo==0)
         {
             char data[64];
 
@@ -266,14 +275,14 @@ void loop()
                 _a_temp._data[_a_temp._count++] = _ftemp;
             }
 
-            sprintf(data, " t= %f alarm = %f", _ftemp, float(_alarm_temp));
+            sprintf(data, " t= %f alarm = %f  mod = %d", _ftemp, float(_alarm_temp), _modulo);
             Serial.println(data);
         }
 
     }
     dnsServer.processNextRequest();
     server.handleClient();
-    delay (32);
+    delay (8);
 
     ++_loop;
 }
