@@ -1,6 +1,9 @@
 # Gemini XGA-3000  Gemini XGA-5000, ESP3266 PWM controlled Fans
 
-# Controls the 4 fans to a Gemini Amplifier to eliminate fan noise at low power
+### Fans speed control to regullate the heatsink temperature
+
+   * wifi ready
+   * web page settings for pwm frequency, pwm start duty cicle, temperature start 
 
 
 Documentation
