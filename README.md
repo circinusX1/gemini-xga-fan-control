@@ -1,7 +1,6 @@
-# Pwm_Cooling
-ESP3266 PWM controlled Fans for  GEMINI XGA 3000 / 5000
+# Gemini XGA-3000  Gemini XGA-5000, ESP3266 PWM controlled Fans
 
-# Controls the 4 fans to a Gemini Amplifier to eliminate fan noise at low power / heat sink temperature.
+# Controls the 4 fans to a Gemini Amplifier to eliminate fan noise at low power
 
 
 Documentation
