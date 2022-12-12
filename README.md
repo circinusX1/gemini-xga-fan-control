@@ -2,6 +2,8 @@
 
 ### Fans speed control to regullate the heatsink temperature
 
+These fans used to go full speed nomater the outout power. Lots of noise.
+
    * wifi ready
    * web page settings for pwm frequency, pwm start duty cicle, temperature start 
 
